@@ -1,19 +1,23 @@
 
-# E2E Chat
+# 🛡️ E2E Chat
 
 <p align="center">
   <img src="./images/logo.png" width="300">
 </p>
 
-**End-to-End Encrypted 1-to-1 Chat**
+E2E Chat on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus.
 
-IRIS E2E Chat on selaimessa toimiva kahden käyttäjän välinen viestintäjärjestelmä, jossa viestien sisältö salataan ennen palvelimelle lähettämistä.
+ärjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
 
-Projektin alkuperäinen toteutus on rakennettu JavaScriptillä Web Cryptography API:n avulla. Salaus perustuu hybridimalliin, jossa viestin sisältö salataan symmetrisellä AES-GCM-avaimella ja kyseinen AES-avain salataan käyttäjien RSA-OAEP-julkisilla avaimilla.
+**Node.js**-serveri (backend) toimii vain sokeana välittäjänä, eikä sillä ole koskaan pääsyä viestien selväkieliseen sisältöön.
 
-> Projekti on alkuperäinen, noin kolme vuotta vanha toteutus, jota käytetään teknisenä pohjana ja oppimateriaalina myöhempää modernimpaa E2E-chatin toteutusta varten.
+Client on toteutettu **Reactilla**, joka  vastaa käyttöliittymästä sekä kaikista kryptografisista operaatioista suoraan käyttäjän laitteella.
 
----
+API on **GraphQL** (pääasiallinen datasiirto), **REST** (rest-rajapinnat) ja reaaliaikaisuudesta vastaa **Websockets** viestinvälitys.
+
+Tietokantana toimii **PostgreSQL** (järjestelmä migroitiin alkuperäisestä **MySQL**-toteutuksesta).
+Tietokantakyselyistä ja datamallinnuksesta vastaa **Prisma ORM**, johon siirryttiin projektin kehityksen aikana alkuperäisestä **Sequelizen** toteutuksesta.
+
 
 ## 1. Projektin tavoite
 
