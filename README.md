@@ -27,6 +27,9 @@ Käyttäjän yksityinen salausavain johdetaan salasanalauseesta **(Passphrase)**
   <img src="./images/passphraseUnohtu.jpg" width="300">
   <img src="./images/passphrase2.jpg" width="300">
 </p>
+<p align="center">
+  <img src="./images/chat.png" width="300">
+</p>
 
 ## 1. Projektin tavoite
 
