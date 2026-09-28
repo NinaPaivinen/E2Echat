@@ -22,6 +22,12 @@ Käyttäjän yksityinen salausavain johdetaan salasanalauseesta **(Passphrase)**
 
 **IndexedDB** toimi valinnaisena **pitkäaikaistallennuksena** selaimessa. Tämä tarkoittaa, että jos käyttäjä ei valinnut pitkäaikaistallennusta, avaimet pysyivät vain selaimen välimuistissa (RAM) ja katoavat heti, kun välilehti suljetaan. IndexedDB:n ansiosta istunnon pystyi halutessaan säilyttämään turvallisesti.
 
+
+<p align="center">
+  <img src="./images/passphraseUnohtu.jpg" width="300">
+  <img src="./images/passphrase2.jpg" width="300">
+</p>
+
 ## 1. Projektin tavoite
 
 Projektin tavoitteena oli toteuttaa yksinkertainen kahden käyttäjän välinen E2E-salattu chat.
