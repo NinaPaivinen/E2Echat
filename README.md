@@ -24,7 +24,7 @@ Kyseessä oli karvalakki mallin E2E chät, yksinkertaisempi käyttäjäkohtaisii
 
 ---
 
-# Architecture
+# Arkkitehtuuuri
 
 Chat used WebSocket communication for realtime messaging and GraphQL for application-level data access.
 
@@ -133,7 +133,7 @@ Tällöin uusi private key ei pystynyt avaamaan vanhoja omalle käyttäjälle sa
 
 ---
 
-# What Happens When the Password Is Lost?
+# Mitä tapahtui jos hUkkasi yksityisen avaimen purku avaimen (passhrasen)?
 
 Vanhoja viestejä ei välttämättä poistettu tietokannasta.
 
@@ -332,7 +332,7 @@ Palvelin pystyi säilyttämään ja välittämään salattua viestidataa ilman e
 
 ---
 
-# Static-Key Architecture
+# Static-Key Arkkitehtuuri
 
 Projektin kannalta tärkeä termi on **Static-Key Hybrid E2E Encryption**.
 
@@ -371,7 +371,7 @@ Tämä oli huomattavasti yksinkertaisempi kuin nykyiset ratcheting-pohjaiset E2E
 
 ---
 
-# Key Replacement
+# Avainen vaihto
 
 Kun käyttäjä joutui vaihtamaan avainparinsa:
 
@@ -399,7 +399,7 @@ Keskustelukumppanin omat avaimet eivät kuitenkaan muuttuneet tämän seurauksen
 
 ---
 
-# Security Boundary
+# Turvallisuus malli
 
 Projektin alkuperäinen turvallisuusmalli voidaan tiivistää näin:
 
@@ -431,7 +431,7 @@ Suojaus perustui siihen, että käyttäjän salainen avainmateriaali pysyi käyt
 
 ---
 
-# Limitations
+# Rajoitukset
 
 Alkuperäinen toteutus oli tarkoituksella yksinkertaisempi kuin modernit E2E-protokollat.
 
