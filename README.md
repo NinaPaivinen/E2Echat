@@ -5,640 +5,1248 @@
   <img src="./images/logo.png" width="300">
 </p>
 
-## Yleiskuva
+**End-to-End Encrypted 1-to-1 Chat**
 
-Projektin alkuperäinen chat oli kahden käyttäjän välinen **E2E-salattu viestintäjärjestelmä**, jossa viestit salattiin asiakkaan puolella ennen niiden lähettämistä palvelimelle.
+IRIS E2E Chat on selaimessa toimiva kahden käyttäjän välinen viestintäjärjestelmä, jossa viestien sisältö salataan ennen palvelimelle lähettämistä.
 
-Ratkaisu perustui **static-key hybrid E2E encryption** -malliin:
+Projektin alkuperäinen toteutus on rakennettu JavaScriptillä Web Cryptography API:n avulla. Salaus perustuu hybridimalliin, jossa viestin sisältö salataan symmetrisellä AES-GCM-avaimella ja kyseinen AES-avain salataan käyttäjien RSA-OAEP-julkisilla avaimilla.
 
-* jokaisella käyttäjällä oli oma julkinen ja yksityinen avainpari
-* käyttäjän julkinen avain (`publicKey`) voitiin tallentaa palvelimelle
-* varsinainen yksityinen avain oli käyttäjän hallussa 
-* tietokannassa voitiin säilyttää yksityisestä avaimesta salattu versio (`encryptedKey`)
-* viestin sisältö salattiin AES:llä
-* AES-avain suojattiin julkisen avaimen kryptografialla
-* sama AES-avain suojattiin sekä vastaanottajalle että lähettäjälle
-* avaimia ei vaihdettu tai ratchetoitu jokaisen viestin yhteydessä
-
-Kyseessä oli karvalakki mallin E2E chät, yksinkertaisempi käyttäjäkohtaisiin pysyviin avaimiin perustuva E2E-ratkaisu.
+> Projekti on alkuperäinen, noin kolme vuotta vanha toteutus, jota käytetään teknisenä pohjana ja oppimateriaalina myöhempää modernimpaa E2E-chatin toteutusta varten.
 
 ---
 
-# Arkkitehtuuuri
+## 1. Projektin tavoite
 
-Chat used WebSocket communication for realtime messaging and GraphQL for application-level data access.
+Projektin tavoitteena oli toteuttaa yksinkertainen kahden käyttäjän välinen E2E-salattu chat.
+
+Keskeinen periaate:
 
 ```text
-+-------------------+
-|     Chat Client   |
-|                   |
-|  Private Key      |
-|  Encryption       |
-|  Decryption       |
-+---------+---------+
-          |
-          | WebSocket
-          |
-          v
-+-------------------+
-|      Backend      |
-|                   |
-|  Chat / GraphQL   |
-|  Message routing  |
-|  Database access  |
-+---------+---------+
-          |
-          v
-+-------------------+
-|     Database      |
-|                   |
-|  Public Keys      |
-|  Encrypted Keys   |
-|  Ciphertext       |
-+-------------------+
+User A
+  │
+  │ plaintext
+  ▼
+Client
+  │
+  │ AES-GCM
+  ▼
+Encrypted message
+  │
+  │ RSA-OAEP
+  ▼
+Encrypted AES key
+  │
+  ▼
+Server
+  │
+  │ encrypted data
+  ▼
+User B
+  │
+  │ RSA-OAEP
+  ▼
+AES key
+  │
+  │ AES-GCM
+  ▼
+Plaintext
 ```
 
-Palvelimen tehtävänä oli käsitellä chatin tietoja ja välittää salattuja viestejä. Viestin varsinainen plaintext ei ollut palvelimen tarvitsema osa viestin välitystä.
+Palvelimen tehtävänä on välittää ja tallentaa salattua dataa.
+
+Viestin plaintext ei kuulu palvelimen normaaliin viestinkäsittelyyn.
 
 ---
 
-# User Keys
+# 2. E2E-salauksen periaate
 
-Jokaisella käyttäjällä oli oma avainpari:
+Projektissa käytetään hybridisalausta.
+
+Hybridimallissa käytetään kahta eri salausmenetelmää eri tarkoituksiin:
+
+* **AES-GCM** salaa varsinaisen viestin
+* **RSA-OAEP** salaa AES-avaimen
+
+Tämä on käytännöllinen tapa yhdistää symmetrisen ja asymmetrisen salauksen ominaisuudet.
+
+## Miksi ei salata koko viestiä RSA:lla?
+
+RSA ei ole tarkoitettu suurten viestimäärien tehokkaaseen salaamiseen.
+
+Sen sijaan:
 
 ```text
-+----------------------+
-|      User Key Pair   |
-+----------------------+
-|                      |
-|   Public Key         |
-|      │               |
-|      └── Database    |
-|                      |
-|   Private Key        |
-|      │               |
-|      └── User        |
-|          Device      |
-|                      |
-+----------------------+
+Plaintext
+   │
+   ▼
+AES-GCM
+   │
+   ├── Ciphertext
+   └── AES key
+          │
+          ▼
+       RSA-OAEP
+          │
+          ▼
+   Encrypted AES key
 ```
 
-## Public key
-
-`publicKey` oli käyttäjän julkinen avain.
-
-Muut käyttäjät pystyivät käyttämään sitä salatakseen kyseiselle käyttäjälle tarkoitettua kryptografista materiaalia.
-
-Julkinen avain voitiin siis säilyttää tietokannassa, eikä sen paljastuminen itsessään paljastanut käyttäjän private keytä.
-
-## Private key
-
-Private key oli käyttäjän salainen avain.
-
-Sen varsinainen käyttö tapahtui käyttäjän omalla laitteella.
-
-Tietokannassa oleva `encryptedKey` ei ollut sama asia kuin käyttäjän avoin private key. Se oli private keystä muodostettu **salattu avainmateriaali**, jonka tarkoituksena oli mahdollistaa private keyn turvallisempi säilytys ja palauttaminen käyttäjän tunnistautumiseen liittyvän salaisen tiedon avulla.
-
-Palvelimelle ei siis ollut tarkoitus antaa käyttäjän salaista private keytä avoimessa muodossa.
+RSA:ta käytetään siis vain pienen AES-avaimen suojaamiseen.
 
 ---
 
-# Password and Private Key
+# 3. Käyttäjän avainpari
 
-Käyttäjän salasana oli sidoksissa private keyn suojaamiseen.
-
-Yksinkertaistettuna rakenne oli:
+Jokaisella käyttäjällä on RSA-avainpari:
 
 ```text
-User Password
-      |
-      v
-Unlock / decrypt
-      |
-      v
-Encrypted Private Key
-      |
-      v
-Private Key
-      |
-      v
-Decrypt Message Key
+RSA Key Pair
+
+┌─────────────────────┐
+│ Public Key          │
+│                     │
+│ voidaan jakaa       │
+└─────────┬───────────┘
+          │
+          │
+          ▼
+     Database
+
+
+┌─────────────────────┐
+│ Private Key         │
+│                     │
+│ salainen            │
+│                     │
+│ käyttäjän hallussa  │
+└─────────────────────┘
 ```
 
-Tästä seurasi tärkeä ominaisuus.
+Public key voidaan tallentaa palvelimelle.
 
-Jos käyttäjä unohti salasanansa eikä vanhaa private keytä enää pystytty palauttamaan, käyttäjän täytyi luoda **uusi avainpari**.
+Private key puolestaan on salainen avain, jota tarvitaan viestien avaamiseen.
 
-Tällöin uusi private key ei pystynyt avaamaan vanhoja omalle käyttäjälle salattuja AES-avaimia.
+Palvelimelle tallennettu `encryptedKey` ei tarkoita plaintext-muodossa tallennettua private keytä. Se on suojattua avainmateriaalia, jota voidaan käyttää private keyn säilyttämiseen tai palauttamiseen käyttäjän salasanan yhteydessä.
 
 ---
 
-# Mitä tapahtui jos hUkkasi yksityisen avaimen purku avaimen (passhrasen)?
+# 4. UserKey
 
-Vanhoja viestejä ei välttämättä poistettu tietokannasta.
+Projektissa käyttäjän avaintiedot tallennetaan erilliseen `UserKey`-malliin.
 
-Ongelma oli kryptografinen:
-
-```text
-OLD KEY PAIR
-     |
-     +---- encryptedAesKeyOwn
-     |
-     X
-     |
-NEW KEY PAIR
-     |
-     +---- Cannot decrypt old own messages
-```
-
-Käyttäjä menetti siis pääsyn omiin vanhoihin viesteihinsä, jos niiden avaamiseen tarvittavaa vanhaa private keytä ei enää ollut saatavilla.
-
-Keskustelukumppanin näkökulmasta tilanne oli erilainen.
-
-Vastaanottajalle tarkoitettu AES-avain oli salattu hänen julkisella avaimellaan:
-
-```text
-                 Message
-                    |
-                    v
-                 AES Key
-                    |
-          +---------+---------+
-          |                   |
-          v                   v
- Recipient Public Key     Sender Public Key
-          |                   |
-          v                   v
-encryptedAesKeyFriend   encryptedAesKeyOwn
-```
-
-Siksi keskustelukumppani pystyi edelleen avaamaan hänelle tarkoitetun viestin omalla private keyllään, vaikka toinen käyttäjä olisi vaihtanut oman avainparinsa.
-
----
-
-# Message Encryption
-
-Varsinainen viesti salattiin symmetrisellä AES-salauksella.
-
-Julkisen avaimen kryptografiaa ei käytetty varsinaisen viestin tekstin salaamiseen, vaan AES-avaimen suojaamiseen.
-
-```text
-Plaintext Message
-       |
-       | AES encryption
-       |
-       v
-   Ciphertext
-       |
-       +-------------------+
-       |                   |
-       v                   v
-    IV                AES Key
-                           |
-                    +------+------+
-                    |             |
-                    v             v
-          Recipient Public    Sender Public
-                 Key               Key
-                    |             |
-                    v             v
-       encryptedAesKeyFriend  encryptedAesKeyOwn
-```
-
-Tämä on hybridisalauksen perusidea:
-
-* AES soveltuu varsinaisen datan tehokkaaseen salaamiseen.
-* Julkisen avaimen kryptografia soveltuu AES-avaimen suojaamiseen.
-
----
-
-# Message Database Model
-
-Alkuperäisessä `Message`-mallissa oli muun muassa seuraavat kentät:
-
-```text
-Message
-├── id
-├── ChatID
-├── AccountID
-├── Status
-├── encrypted
-├── encryptedAesKeyFriend
-├── encryptedAesKeyOwn
-├── iv
-└── cipherText
-```
-
-## encrypted
-
-Kertoi, oliko viesti salattu.
-
-## encryptedAesKeyFriend
-
-AES-avain salattuna vastaanottajan public keyllä.
-
-Sen avulla vastaanottaja pystyi private keyllään palauttamaan viestin avaamiseen tarvittavan AES-avaimen.
-
-## encryptedAesKeyOwn
-
-Sama AES-avain salattuna lähettäjän public keyllä.
-
-Tämän tarkoituksena oli mahdollistaa myös lähettäjän pääsy omaan lähettämäänsä viestiin.
-
-Ilman tätä rakennetta lähettäjä ei välttämättä pystyisi avaamaan omaa viestiään myöhemmin, koska viesti olisi salattu ainoastaan vastaanottajan avaimella.
-
-## iv
-
-AES-salauksen yhteydessä käytetty initialization vector.
-
-## cipherText
-
-Varsinainen salattu viestisisältö.
-
-Tietokannassa ei siis ollut plaintext-viestin sisältöä tässä rakenteessa.
-
----
-
-# UserKey Database Model
-
-Alkuperäisessä `UserKey`-mallissa oli:
+Keskeiset kentät:
 
 ```text
 UserKey
-├── AccountID
-├── encryptedKey
-├── publicKey
-├── createdAt
-└── updatedAt
-```
 
-Oleellinen jako oli:
-
-```text
-publicKey
-    |
-    +---- Public information
-    |
-    +---- Stored in database
-
-
+AccountID
 encryptedKey
-    |
-    +---- Encrypted private-key material
-    |
-    +---- Stored in database
-
-
-Private Key
-    |
-    +---- Secret key
-    |
-    +---- Used by the user's device
+publicKey
+createdAt
+updatedAt
 ```
 
-`encryptedKey` ei siis tarkoittanut, että tietokannassa olisi ollut käyttäjän private key avoimena.
+### AccountID
+
+Viittaa käyttäjän `AccountID`:hen.
+
+### publicKey
+
+Käyttäjän RSA-public key.
+
+Sitä voidaan käyttää esimerkiksi toisen käyttäjän AES-avaimen salaamiseen.
+
+### encryptedKey
+
+Suojattu avainmateriaali.
+
+Tarkoituksena ei ole säilyttää käyttäjän salaista private keytä plaintext-muodossa tietokannassa.
 
 ---
 
-# Message Decryption
+# 5. Viestin salaus
 
-Vastaanottajan laitteella prosessi tapahtui konseptuaalisesti näin:
+Jokaiselle viestille generoidaan uusi AES-avain.
 
-```text
-Database
-   |
-   +---- cipherText
-   |
-   +---- iv
-   |
-   +---- encryptedAesKeyFriend
-              |
-              v
-        User Private Key
-              |
-              v
-           AES Key
-              |
-              v
-      AES Decryption
-              |
-              v
-        Plaintext Message
+```js
+const aesKey = await generateAESKey();
 ```
 
-Laitteen piti siis saada käyttöönsä vastaanottajan private key.
+Tämä on tärkeä yksityiskohta:
 
-Palvelin pystyi säilyttämään ja välittämään salattua viestidataa ilman että se tarvitsi käyttäjän avointa private keytä viestin avaamiseen.
-
----
-
-# Static-Key Arkkitehtuuri
-
-Projektin kannalta tärkeä termi on **Static-Key Hybrid E2E Encryption**.
-
-"Static" tarkoittaa tässä sitä, että käyttäjän avainpari oli käyttäjäkohtainen ja pysyvämpi avainidentiteetti.
-
-Järjestelmässä ei ollut:
-
-* per-message key rotation -mekanismia
-* ratcheting-mekanismia
-* Signal Double Ratchet -tyyppistä avainketjua
-* automaattisesti vaihtuvia käyttäjäkohtaisia avainpareja jokaiselle viestille
-
-Mallia voi kuvata näin:
-
-```text
-USER
- |
- +---- Persistent Public Key
- |
- +---- Persistent Private Key
-              |
-              v
-        Message Decryption
-
-
-MESSAGE
- |
- +---- AES Encryption
- |
- +---- AES Key protected with recipient public key
- |
- +---- AES Key protected with sender public key
-```
-
-Tämä oli huomattavasti yksinkertaisempi kuin nykyiset ratcheting-pohjaiset E2E-protokollat, mutta se mahdollisti kahden käyttäjän välisen salatun viestinnän ilman että plaintext-viestiä tarvittiin tallentaa palvelimelle.
-
----
-
-# Avainen vaihto
-
-Kun käyttäjä joutui vaihtamaan avainparinsa:
-
-```text
-OLD KEY PAIR
-     |
-     +---- Old messages
-     |
-     +---- Old encrypted AES keys
-     |
-     X
-     |
-NEW KEY PAIR
-     |
-     +---- New messages
-```
-
-Uusi avainpari oli kryptografisesti uusi identiteetti.
-
-Siksi vanhojen viestien avaaminen ei automaattisesti siirtynyt uudelle avainparille.
-
-Tämä oli suora seuraus siitä, että viestien avaamiseen tarvittava avainmateriaali oli sidottu vanhaan private keyhin.
-
-Keskustelukumppanin omat avaimet eivät kuitenkaan muuttuneet tämän seurauksena, joten hän pystyi edelleen lukemaan omat vastaanottamansa vanhat viestinsä.
-
----
-
-# Turvallisuus malli
-
-Projektin alkuperäinen turvallisuusmalli voidaan tiivistää näin:
-
-```text
-+---------------------+
-|      User Device    |
-|                     |
-|  Private Key        |
-|  Plaintext          |
-|  Encryption         |
-|  Decryption         |
-+----------+----------+
-           |
-           | Encrypted data
-           v
-+---------------------+
-|       Server        |
-|                     |
-|  Public Keys        |
-|  Encrypted Keys     |
-|  Ciphertext         |
-|  IV                  |
-+---------------------+
-```
-
-Palvelimen ei ollut tarkoitus toimia käyttäjän private keynä tai tietää käyttäjän plaintext-viestejä.
-
-Suojaus perustui siihen, että käyttäjän salainen avainmateriaali pysyi käyttäjän hallinnassa ja tietokantaan tallennettu viestidata oli salattua.
-
----
-
-# Rajoitukset
-
-Alkuperäinen toteutus oli tarkoituksella yksinkertaisempi kuin modernit E2E-protokollat.
-
-Keskeiset rajoitteet olivat:
-
-1. Käyttäjäkohtainen avainpari oli staattinen.
-2. Viestikohtaista ratcheting-mekanismia ei ollut.
-3. Avainparin vaihtaminen saattoi katkaista käyttäjän pääsyn vanhoihin omiin viesteihin.
-4. Salasanan unohtaminen saattoi johtaa vanhan private keyn menettämiseen.
-5. Järjestelmä oli suunniteltu erityisesti kahden käyttäjän väliseen chat-käyttöön.
-6. Malli ei vastannut modernien Signal-tyyppisten E2E-protokollien rakennetta.
-
-Tämä ei kuitenkaan tarkoita, että alkuperäinen idea olisi ollut "ei-salattu" tai pelkkä palvelimen toteuttama salaustekniikka. Kyseessä oli asiakkaan ja käyttäjäkohtaisten avainten ympärille rakennettu hybridimuotoinen E2E-malli.
-
----
-
-# Terminology
-
-Projektista voidaan käyttää seuraavia termejä:
-
-**Static-Key Hybrid E2E Encryption**
-
-tai suomeksi:
-
-**Staattisiin käyttäjäkohtaisiin avaimiin perustuva hybridimuotoinen E2E-salaus**
-
-Tärkeimmät käsitteet:
-
-| Termi                   | Merkitys                                                   |
-| ----------------------- | ---------------------------------------------------------- |
-| `publicKey`             | Käyttäjän julkinen avain                                   |
-| Private Key             | Käyttäjän salainen yksityinen avain                        |
-| `encryptedKey`          | Salattu private-key -materiaali                            |
-| AES Key                 | Varsinaisen viestin salaamiseen käytetty symmetrinen avain |
-| `encryptedAesKeyFriend` | AES-avain salattuna vastaanottajalle                       |
-| `encryptedAesKeyOwn`    | AES-avain salattuna lähettäjälle                           |
-| `iv`                    | AES-salauksen initialization vector                        |
-| `cipherText`            | Salattu viestisisältö                                      |
-| Static-Key              | Käyttäjäkohtainen pysyvämpi avainpari                      |
-| Hybrid Encryption       | AES + public-key cryptography                              |
-
----
-
-# Summary vertailu nykyaikaisiin E2E chätteihin
-
-Alkuperäinen E2E-chat perustui seuraavaan ideaan:
-
-```text
-User
- |
- +---- Public Key --------------------+
- |                                    |
- +---- Private Key                    |
- |                                    |
- +---- Password                       |
-                                      |
-                                      v
-                              Message Encryption
-                                      |
-                    +-----------------+-----------------+
-                    |                                   |
-                    v                                   v
-              Recipient Public Key                 Own Public Key
-                    |                                   |
-                    v                                   v
-          encryptedAesKeyFriend                 encryptedAesKeyOwn
-                    |                                   |
-                    +-----------------+-----------------+
-                                      |
-                                      v
-                                  Ciphertext
-                                      |
-                                      v
-                                  Database
-```
-
-Järjestelmän keskeinen idea oli, että **itse viesti salattiin AES:llä ja AES-avain suojattiin käyttäjien public keyillä**.
-
-Jokaisella käyttäjällä oli oma pysyvämpi avainpari. Private key oli käyttäjän salainen avainmateriaali, kun taas `publicKey` voitiin julkaista ja tallentaa palvelimelle. Tietokannassa oleva `encryptedKey` oli salattu private-key -materiaali, ei avoin private key.
-
-Koska avainpari oli staattinen eikä järjestelmä käyttänyt viestikohtaista ratchetingia, avainparin vaihtaminen vaikutti myös vanhojen omien viestien avaamiseen. Keskustelukumppanin pääsy omiin vanhoihin viesteihinsä säilyi kuitenkin hänen oman avainparinsa ansiosta.
-
-
-### Vanha projektisi vs. moderni E2E
-
-| Ominaisuus                                              | Vanha E2E-chat                         | Moderni ratcheting E2E         |
-| ------------------------------------------------------- | -------------------------------------- | ------------------------------ |
-| Käyttäjällä oma key pair                                | ✅                                      | ✅                              |
-| Public key palvelimella                                 | ✅                                      | ✅                              |
-| Private key käyttäjän hallussa                          | ✅                                      | ✅                              |
-| Viesti salataan symmetrisellä avaimella                 | ✅                                      | ✅                              |
-| Public key suojaa viestin avainta                       | ✅                                      | 🔸 yleensä eri tavalla         |
-| Sama käyttäjän avainpari pitkään                        | **✅**                                  | 🔸 vain osittain               |
-| Uusia avaimia viestiketjun aikana                       | ❌                                      | **✅**                          |
-| Ratchet                                                 | ❌                                      | **✅**                          |
-| Viestit kryptografisesti toisistaan eriytettyjä         | ❌ / rajallisesti                       | **✅**                          |
-| Forward secrecy                                         | Ei tämän mallin varsinainen ominaisuus | **✅ tyypillisesti**            |
-| Key compromise recovery                                 | Rajallinen                             | **✅ ratcheting-protokollissa** |
-| Salasanan vaihto voi vaihtaa käyttäjän E2E-identiteetin | **Kyllä, vanhassa mallissa**           | Ei välttämättä samalla tavalla |
-
-### Vanhassa mallissa
-
-Ajatus oli käytännössä:
-
-```text
-                    USER A
-                       │
-                ┌──────┴──────┐
-                │             │
-           Public Key     Private Key
-                │             │
-                │             └── User A controls
-                │
-                ▼
-             Database
-
-
-MESSAGE
-   │
-   ▼
- AES encryption
-   │
-   ├── AES key → encrypted with User B public key
-   │
-   └── AES key → encrypted with User A public key
-```
-
-Eli **käyttäjän kryptografinen identiteetti oli hyvin konkreettisesti tämän key pairin ympärillä**.
-
-Jos A vaihtoi key pairin:
-
-```text
-User A OLD key pair
-       │
-       ├── old encryptedAesKeyOwn
-       │
-       └── old messages
-                ↓
-          old private key
-                ↓
-              🔓
-
-
-User A NEW key pair
-       │
-       └── cannot replace old private key
-                  ↓
-             old messages 🔒
-```
-
-Mutta B:llä oli edelleen oma private keynsä ja B:lle salattu AES-avain:
-
-```text
-User B private key
-       │
-       ▼
-encryptedAesKeyFriend
-       │
-       ▼
-    AES key
-       │
-       ▼
-old message 🔓
-```
-
-### Modernissa mallissa ajatus muuttuu
-
-Esimerkiksi Signal-tyyppisessä arkkitehtuurissa käyttäjän pysyvä avainpari toimii enemmän **identiteetin ankkurina**, eikä sitä käytetä samalla tavalla jokaisen viestin salausavaimen suorana suojana.
-
-Viestiketjuun muodostetaan jatkuvasti uutta avainmateriaalia:
-
-```text
-User Identity Keys
-       │
-       ▼
-   Session Setup
-       │
-       ▼
-   Ratchet State
-       │
-       ├── Message Key 1
-       ├── Message Key 2
-       ├── Message Key 3
-       ├── Message Key 4
-       └── ...
-```
+> Käyttäjän RSA-avainpari ei vaihdu jokaisen viestin yhteydessä, mutta viestin AES-avain vaihtuu.
 
 Eli:
 
-**Vanha projektisi:**
+```text
+User identity key pair
+        │
+        │ pitkäikäinen
+        ▼
+RSA Public / Private Key
 
-> "Tämä viesti kuuluu käyttäjälle B → käytetään B:n public keytä AES-avaimen suojaamiseen."
 
-**Moderni ratcheting-malli:**
+Message 1 → AES Key 1
+Message 2 → AES Key 2
+Message 3 → AES Key 3
+Message 4 → AES Key 4
+```
 
-> "A:n ja B:n välisellä sessionilla on tämänhetkinen kryptografinen tila → siitä johdetaan tämän viestin avain → seuraava viesti käyttää jo uutta avainta."
+---
 
-Tämä on ehkä paras tapa hahmottaa ero.
+# 6. AES-GCM
 
-### Ja tässä on yksi tärkeä tarkennus
+Varsinainen viesti salataan AES-GCM:llä.
 
-**"Käyttäjään sidottu" ei ole itsessään huono tai vanhentunut ratkaisu.**
+Prosessi:
 
-Modernikin E2E tarvitsee jonkin tavan vastata kysymykseen:
+```text
+Plaintext
+    │
+    │ AES-GCM
+    │
+    ├── AES Key
+    └── IV
+    │
+    ▼
+Ciphertext
+```
 
-> *"Kuka tämä käyttäjä on kryptografisesti?"*
+Projektissa AES-avaimen koko on 256 bittiä.
 
-Siihen käytetään edelleen pitkäkestoisia identity key -avaimia.
+```js
+crypto.subtle.generateKey(
+    {
+        name: "AES-GCM",
+        length: 256
+    },
+    true,
+    ["encrypt", "decrypt"]
+);
+```
 
-Modernissa järjestelmässä identity key toimii enemmän luottamuksen perustana, jonka päälle muodostetaan lyhytkestoista session/message-key-materiaalia.
+Jokaiselle viestille generoidaan myös uusi IV.
+
+```js
+const iv = crypto.getRandomValues(
+    new Uint8Array(12)
+);
+```
+
+---
+
+# 7. AES-avaimen salaaminen RSA:lla
+
+Kun viesti on salattu AES-GCM:llä, itse AES-avain suojataan RSA-OAEP:llä.
+
+Vastaanottajalla on oma public key:
+
+```text
+Friend Public Key
+        │
+        ▼
+   RSA-OAEP
+        │
+        ▼
+Encrypted AES Key
+```
+
+Tämän ansiosta vain vastaanottaja, jolla on vastaava private key, voi avata AES-avaimen.
+
+---
+
+# 8. AES-avain salataan kahdelle käyttäjälle
+
+Projektin toteutuksessa sama viestin AES-avain salataan kaksi kertaa.
+
+Ensimmäinen salaus tehdään vastaanottajan public keyllä:
+
+```text
+AES Key
+   │
+   ▼
+Friend Public Key
+   │
+   ▼
+encryptedAesKeyFriend
+```
+
+Toinen salaus tehdään lähettäjän omalla public keyllä:
+
+```text
+AES Key
+   │
+   ▼
+Own Public Key
+   │
+   ▼
+encryptedAesKeyOwn
+```
+
+Tämän seurauksena viestin tietorakenne sisältää:
+
+```js
+{
+    encryptedAesKeyFriend,
+    encryptedAesKeyOwn,
+    iv,
+    cipherText
+}
+```
+
+---
+
+# 9. Miksi AES-avain salataan myös lähettäjälle?
+
+Lähettäjän täytyy pystyä avaamaan omat lähettämänsä viestit myöhemmin.
+
+Siksi sama AES-avain suojataan myös lähettäjän public keyllä.
+
+```text
+                    AES Key
+                   /       \
+                  /         \
+                 ▼           ▼
+        Friend Public Key   Own Public Key
+                 │           │
+                 ▼           ▼
+ encryptedAesKeyFriend  encryptedAesKeyOwn
+```
+
+Kun lähettäjä haluaa lukea viestin:
+
+```text
+encryptedAesKeyOwn
+        │
+        ▼
+Own Private Key
+        │
+        ▼
+AES Key
+        │
+        ▼
+cipherText + IV
+        │
+        ▼
+Plaintext
+```
+
+Vastaanottaja käyttää vastaavasti:
+
+```text
+encryptedAesKeyFriend
+        │
+        ▼
+Friend Private Key
+        │
+        ▼
+AES Key
+        │
+        ▼
+cipherText + IV
+        │
+        ▼
+Plaintext
+```
+
+---
+
+# 10. Viestin tietokantarakenne
+
+Viestit tallennetaan `Message`-malliin.
+
+Keskeiset kentät ovat:
+
+```text
+id
+ChatID
+AccountID
+Status
+encrypted
+encryptedAesKeyFriend
+encryptedAesKeyOwn
+iv
+cipherText
+```
+
+### id
+
+Viestin yksilöllinen tunniste.
+
+### ChatID
+
+Viittaa keskusteluun.
+
+### AccountID
+
+Viestin lähettäjä.
+
+### Status
+
+Viestin tila:
+
+```text
+SENDED
+READED
+```
+
+### encrypted
+
+Kertoo, onko viesti salattu.
+
+### encryptedAesKeyFriend
+
+AES-avaimen RSA-OAEP-salattu versio vastaanottajalle.
+
+### encryptedAesKeyOwn
+
+AES-avaimen RSA-OAEP-salattu versio lähettäjälle.
+
+### iv
+
+AES-GCM:n käyttämä initialization vector.
+
+### cipherText
+
+Varsinainen AES-GCM-salattu viesti.
+
+---
+
+# 11. Koko viestin salausprosessi
+
+Kun käyttäjä lähettää viestin:
+
+```text
+User A
+  │
+  │ "Hello"
+  ▼
+Client
+  │
+  │ 1. Generate AES-256 key
+  ▼
+AES Key
+  │
+  │ 2. Encrypt message with AES-GCM
+  ▼
+CipherText
+  │
+  ├───────────────────────┐
+  │                       │
+  │ 3. RSA-OAEP           │ 3. RSA-OAEP
+  │                       │
+  ▼                       ▼
+Friend Public Key      Own Public Key
+  │                       │
+  ▼                       ▼
+encryptedAesKeyFriend  encryptedAesKeyOwn
+  │                       │
+  └───────────┬───────────┘
+              │
+              ▼
+          Message Object
+```
+
+Lopputulos:
+
+```js
+{
+    encryptedAesKeyFriend,
+    encryptedAesKeyOwn,
+    iv,
+    cipherText
+}
+```
+
+Tämä data voidaan lähettää palvelimelle.
+
+---
+
+# 12. Viestin avaaminen
+
+Vastaanottaja saa salatun viestin.
+
+Ensimmäiseksi hän käyttää omaa private keytä AES-avaimen avaamiseen.
+
+```text
+encryptedAesKeyFriend
+          │
+          ▼
+     RSA-OAEP
+          │
+          ▼
+    Private Key
+          │
+          ▼
+       AES Key
+```
+
+Sen jälkeen AES-avaimella avataan varsinainen viesti:
+
+```text
+CipherText + IV
+       │
+       ▼
+    AES-GCM
+       │
+       ▼
+   Plaintext
+```
+
+---
+
+# 13. Client-side cryptography
+
+Salaus toteutetaan selaimen Web Cryptography API:n avulla.
+
+Keskeisiä API-toimintoja ovat:
+
+```text
+crypto.subtle.generateKey()
+crypto.subtle.encrypt()
+crypto.subtle.decrypt()
+crypto.subtle.importKey()
+crypto.subtle.exportKey()
+```
+
+Private key voidaan importata esimerkiksi:
+
+```js
+export async function importPrivateKey(jwk) {
+    return await window.crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        {
+            name: "RSA-OAEP",
+            hash: {
+                name: "SHA-256"
+            }
+        },
+        true,
+        ["decrypt"]
+    );
+}
+```
+
+---
+
+# 14. Salausalgoritmit
+
+Projektin keskeinen kryptografinen kokonaisuus:
+
+| Osa                    | Algoritmi      |
+| ---------------------- | -------------- |
+| Viestin salaus         | AES-GCM        |
+| AES-avain              | 256 bit        |
+| AES IV                 | 12 bytes       |
+| AES authentication tag | 128 bit        |
+| Avaimen suojaus        | RSA-OAEP       |
+| RSA hash               | SHA-256        |
+| Avainten formaatti     | JWK            |
+| Kryptografinen API     | Web Crypto API |
+
+---
+
+# 15. Miksi AES-GCM?
+
+AES-GCM tarjoaa sekä:
+
+* luottamuksellisuuden
+* eheyden/autentikoinnin
+
+Tämä tarkoittaa, että viestin muuttaminen salauksen jälkeen voidaan havaita purkuvaiheessa.
+
+Mallissa:
+
+```text
+Plaintext
+    │
+    ▼
+ AES-GCM
+    │
+    ├── CipherText
+    ├── IV
+    └── Authentication Tag
+```
+
+---
+
+# 16. Palvelimen rooli
+
+E2E-mallissa palvelin ei tarvitse viestin plaintextia viestin välittämiseen.
+
+Palvelimelle voidaan toimittaa esimerkiksi:
+
+```text
+Chat ID
+Sender
+Recipient
+CipherText
+IV
+Encrypted AES Key
+```
+
+Palvelin toimii tällöin ensisijaisesti viestien:
+
+* välittäjänä
+* tallentajana
+* keskustelujen hallinnoijana
+
+Salaus ja salauksen purkaminen tapahtuvat client-puolella.
+
+---
+
+# 17. Salasanan ja avainten suhde
+
+Käyttäjän salasana liittyy private keyn suojaukseen.
+
+Tavoitteena on, ettei salaista avainmateriaalia tarvitse säilyttää tietokannassa sellaisenaan.
+
+Yksinkertaistettuna:
+
+```text
+Password
+    │
+    ▼
+Key protection
+    │
+    ▼
+Encrypted private-key material
+```
+
+Kun käyttäjä palauttaa avaimensa oikean salasanan avulla, client voi käyttää private keytä viestien avaamiseen.
+
+---
+
+# 18. Mitä jos käyttäjä unohtaa salasanan?
+
+Tässä mallissa vanhan private keyn menettäminen on merkittävä asia.
+
+Jos käyttäjä:
+
+1. unohtaa salasanansa
+2. ei pysty palauttamaan vanhaa private keytä
+3. luo kokonaan uuden RSA-avainparin
+
+niin vanhalla avainparilla salatut viestit eivät enää avaudu uudella private keyllä.
+
+Esimerkiksi:
+
+```text
+Old Key Pair
+     │
+     ├── Old Public Key
+     └── Old Private Key
+             │
+             ▼
+       Old messages
+```
+
+Uusi avainpari:
+
+```text
+New Key Pair
+     │
+     ├── New Public Key
+     └── New Private Key
+```
+
+Uusi private key ei pysty avaamaan vanhalla public keyllä suojattua AES-avainta.
+
+---
+
+# 19. Vanhojen viestien palautuminen
+
+Koska AES-avain salattiin viestin yhteydessä sekä lähettäjälle että vastaanottajalle, keskustelukumppani voi edelleen pystyä lukemaan vanhan viestin.
+
+Esimerkiksi:
+
+```text
+Old message
+     │
+     ├── encryptedAesKeyOwn
+     │        │
+     │        └── Old Private Key
+     │
+     └── encryptedAesKeyFriend
+              │
+              └── Friend Private Key
+```
+
+Jos lähettäjä menettää oman vanhan private keynsä, vastaanottajan avain ei automaattisesti katoa.
+
+Tämä on yksi syy siihen, miksi AES-avain salattiin kahdelle osapuolelle.
+
+---
+
+# 20. Avainparin vaihtaminen
+
+Käyttäjän RSA-avainpari on tässä mallissa pitkäikäinen.
+
+Sitä ei generoida uudelleen jokaisen viestin kohdalla.
+
+Sen sijaan:
+
+```text
+User
+ │
+ └── RSA Key Pair
+       │
+       ├── Public Key
+       └── Private Key
+```
+
+Viestikohtainen AES-avain vaihtuu:
+
+```text
+Message 1 → AES 1
+Message 2 → AES 2
+Message 3 → AES 3
+Message 4 → AES 4
+```
+
+Tämä ero on tärkeä.
+
+**Staattinen käyttäjäavain ei tarkoita staattista viestiavainta.**
+
+---
+
+# 21. Vanha E2E-malli vs. moderni E2E
+
+Tämä projekti edustaa yksinkertaista mutta oikeaa hybridimuotoista E2E-ratkaisua.
+
+Sen keskeinen malli on:
+
+```text
+Persistent RSA identity key pair
+              │
+              ▼
+       Message AES key
+              │
+       ┌──────┴──────┐
+       ▼             ▼
+ Recipient key     Own key
+       │             │
+       ▼             ▼
+Encrypted AES     Encrypted AES
+key               key
+```
+
+Modernit E2E-protokollat voivat edelleen käyttää pitkäikäisiä käyttäjäkohtaisia identiteettiavaimia.
+
+Merkittävä ero on siinä, mitä niiden ympärille rakennetaan.
+
+Modernissa E2E-järjestelmässä voidaan käyttää esimerkiksi:
+
+```text
+Identity Keys
+     │
+     ▼
+Session Establishment
+     │
+     ▼
+Ratchet State
+     │
+     ▼
+Changing Message Keys
+```
+
+Tällöin avainmateriaali kehittyy viestinnän aikana eikä jokainen viesti perustu ainoastaan samaan pitkäikäiseen identiteettiavaimeen.
+
+---
+
+# 22. Mitä modernissa E2E:ssä tehdään eri tavalla?
+
+Modernissa ratcheting-pohjaisessa E2E-mallissa käyttäjän identiteettiavain toimii enemmän identiteetin ja luottamussuhteen ankkurina.
+
+Sen ympärille muodostetaan istuntokohtainen kryptografinen tila.
+
+Esimerkiksi:
+
+```text
+Identity Key
+      │
+      ▼
+Session
+      │
+      ▼
+Ratchet
+      │
+      ├── Message Key 1
+      ├── Message Key 2
+      ├── Message Key 3
+      └── Message Key 4
+```
+
+Tämä mahdollistaa ominaisuuksia, joita tämän projektin alkuperäisessä mallissa ei ole samalla tavalla toteutettu.
+
+Näihin voivat kuulua esimerkiksi:
+
+* avainmateriaalin jatkuva eteneminen
+* istuntokohtainen avainmateriaali
+* viestikohtaisten avainten johtaminen
+* parempi suojaus joidenkin avainten myöhempää paljastumista vastaan
+* monimutkaisempi avainten palautus ja synkronointi
+
+---
+
+# 23. Mikä tässä projektissa oli yksinkertaista?
+
+Alkuperäinen toteutus ei ollut moderni Signal-tyylinen ratcheting-protokolla.
+
+Se ei sisältänyt esimerkiksi:
+
+```text
+Double Ratchet
+Signal-style session protocol
+Continuous key-chain evolution
+Modern multi-device session management
+```
+
+Sen sijaan siinä oli selkeä hybridimalli:
+
+```text
+Persistent user RSA key pair
++
+New AES key per message
++
+RSA-OAEP wrapped AES key
++
+AES-GCM encrypted message
+```
+
+Tämä tekee toteutuksesta suhteellisen suoraviivaisen ymmärtää.
+
+---
+
+# 24. Projektin vahvuus teknisenä harjoituksena
+
+Vaikka toteutus on yksinkertainen verrattuna moderneihin E2E-protokolliin, siinä on useita oikean kryptografisen järjestelmän perusperiaatteita:
+
+* symmetrisen ja asymmetrisen salauksen yhdistäminen
+* avainten hallinta
+* public/private key -malli
+* viestikohtainen AES-avain
+* AES-GCM
+* RSA-OAEP
+* client-side encryption
+* salatun datan tallentaminen
+* käyttäjäkohtaiset avaimet
+* avaimen palauttamisen ongelman huomiointi
+
+Kyseessä ei siis ole pelkkä "salataan teksti RSA:lla" -toteutus.
+
+---
+
+# 25. Alkuperäisen toteutuksen kehitysvaiheet
+
+Clientin kryptografisessa koodissa näkyy myös projektin kehityshistoria.
+
+Mukana on ollut useampia kokeiluja ja toteutusversioita, kuten:
+
+```text
+RSA-only encryption
+        │
+        ▼
+Hybrid encryption
+        │
+        ▼
+AES-GCM + RSA-OAEP
+        │
+        ▼
+AES key encrypted for both users
+```
+
+Koodissa on tämän seurauksena vanhempia/duplikaatteja kryptografisia funktioita.
+
+Esimerkiksi RSA-only-toteutus näyttää olevan vanhempi kokeilu verrattuna nykyiseen hybridimalliin.
+
+Tämä on hyvä huomioida, kun projektia myöhemmin refaktoroidaan.
+
+---
+
+# 26. Nykyisen toteutuksen keskeiset funktiot
+
+Kryptografisessa client-koodissa keskeisiä toimintoja ovat:
+
+```text
+generateAESKey()
+encryptMessageAES()
+encryptAESKeyRSA()
+encryptHybridMessage()
+
+importPrivateKey()
+decryptAESKey()
+decryptMessageAES()
+decryptHybridMessage()
+```
+
+Säilytettävä päälogiikka voidaan hahmottaa näin:
+
+```text
+ENCRYPT
+
+generateAESKey
+      │
+      ▼
+encryptMessageAES
+      │
+      ├── cipherText
+      └── iv
+      │
+      ▼
+encryptAESKeyRSA
+      │
+      ├── Friend Public Key
+      └── Own Public Key
+      │
+      ▼
+Message Object
+```
+
+Ja purku:
+
+```text
+DECRYPT
+
+encryptedAesKey
+      │
+      ▼
+RSA Private Key
+      │
+      ▼
+AES Key
+      │
+      ▼
+cipherText + iv
+      │
+      ▼
+AES-GCM
+      │
+      ▼
+Plaintext
+```
+
+---
+
+# 27. Projektin rajoitukset
+
+Alkuperäinen toteutus ei ole tarkoitettu nykyajan valmiiksi tuotantotason E2E-protokollaksi.
+
+Keskeisiä rajoituksia ovat muun muassa:
+
+* ei Double Ratchet -protokollaa
+* ei jatkuvasti kehittyvää session key -ketjua
+* ei modernia multi-device-key managementia
+* ei kattavaa key verification -järjestelmää
+* avainparin menettäminen vaikuttaa vanhojen omien viestien palauttamiseen
+* kryptografinen protokolla on sovelluskohtainen eikä standardoitu viestiprotokolla
+* client-koodiin on jäänyt vanhempia kryptografisia toteutuksia
+
+Näistä huolimatta alkuperäinen ratkaisu muodostaa selkeän pohjan hybridisen E2E-salauksen ymmärtämiselle.
+
+---
+
+# 28. Arkkitehtuuri
+
+Kokonaisuus voidaan jakaa kolmeen pääosaan:
+
+```text
+┌─────────────────────┐
+│       Client        │
+│                     │
+│  UI                 │
+│  Authentication     │
+│  Key Management     │
+│  Encryption         │
+│  Decryption         │
+└──────────┬──────────┘
+           │
+           │ HTTPS / API
+           ▼
+┌─────────────────────┐
+│       Backend       │
+│                     │
+│  Authentication     │
+│  Chat Management    │
+│  Message Handling   │
+│  Database Access    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│      Database       │
+│                     │
+│ Users               │
+│ UserKey             │
+│ Chats               │
+│ Messages            │
+└─────────────────────┘
+```
+
+Salauslogiikka kuuluu client-puolelle.
+
+---
+
+# 29. Viestin kulku
+
+Koko viestin elinkaari:
+
+```text
+User writes message
+        │
+        ▼
+Client creates AES key
+        │
+        ▼
+AES-GCM encrypts plaintext
+        │
+        ▼
+AES key encrypted with
+recipient public key
+        │
+        ▼
+AES key encrypted with
+sender public key
+        │
+        ▼
+Encrypted message sent
+to backend
+        │
+        ▼
+Backend stores/transfers
+encrypted data
+        │
+        ▼
+Recipient receives message
+        │
+        ▼
+Recipient private key
+decrypts AES key
+        │
+        ▼
+AES-GCM decrypts message
+        │
+        ▼
+Plaintext displayed
+```
+
+---
+
+# 30. Security model
+
+Projektin perusajatuksena on, että palvelimen ei tarvitse tietää viestin sisältöä.
+
+Luottamusmalli:
+
+```text
+User A
+   │
+   │ encrypted
+   ▼
+Server
+   │
+   │ encrypted
+   ▼
+User B
+```
+
+Serveri ei tarvitse:
+
+```text
+User A private key
+User B private key
+Plaintext message
+```
+
+Vastaanottajan private key tarvitaan varsinaisen viestin avaamiseen.
+
+---
+
+# 31. Mitä projekti opetti?
+
+Projektin kautta voidaan hahmottaa käytännössä:
+
+### Symmetrinen salaus
+
+```text
+AES
+```
+
+### Asymmetrinen salaus
+
+```text
+RSA
+```
+
+### Hybridisalaus
+
+```text
+AES + RSA
+```
+
+### Key management
+
+```text
+Public key
+Private key
+Encrypted key material
+```
+
+### Client-side cryptography
+
+```text
+Web Crypto API
+```
+
+### E2E-ajattelu
+
+```text
+Encrypt before transmission
+Decrypt only at endpoint
+```
+
+---
+
+# 32. Tulevaisuuden kehitys
+
+Jos projektista rakennetaan uusi moderni versio, mahdollisia kehityssuuntia ovat:
+
+* selkeämpi key management
+* moderni session establishment
+* ratcheting
+* viestikohtaisesti kehittyvä key material
+* key verification
+* turvallisempi private key storage
+* multi-device support
+* key rotation
+* session recovery
+* replay protection
+* message authentication
+* paremmin määritelty kryptografinen protokolla
+* testattu threat model
+* kryptografisten komponenttien keskittäminen yhteen moduuliin
+
+---
+
+# 33. Terminologia
+
+Projektissa käytetään seuraavia termejä:
+
+| Termi             | Merkitys                                              |
+| ----------------- | ----------------------------------------------------- |
+| Public Key        | Käyttäjän jaettava RSA-julkinen avain                 |
+| Private Key       | Käyttäjän salainen RSA-avain                          |
+| Identity Key Pair | Käyttäjän pitkäikäinen avainpari                      |
+| AES Key           | Yksittäisen viestin symmetrinen avain                 |
+| AES-GCM           | Viestin symmetrinen salausmenetelmä                   |
+| RSA-OAEP          | AES-avaimen suojaamiseen käytetty asymmetrinen salaus |
+| IV                | AES-GCM:n initialization vector                       |
+| CipherText        | Salattu viestisisältö                                 |
+| E2E               | End-to-End Encryption                                 |
+| Hybrid Encryption | Symmetrisen ja asymmetrisen salauksen yhdistelmä      |
+| Ratchet           | Avainmateriaalin jatkuvasti etenevä mekanismi         |
+
+---
+
+# 34. Staattinen avainpari – tarkka merkitys
+
+Tässä projektissa käytetty termi **static key** tarkoittaa käyttäjäkohtaista pitkäikäistä avainparia.
+
+Se ei tarkoita:
+
+> "Sama AES-avain käytetään kaikissa viesteissä."
+
+Päinvastoin.
+
+Projektissa:
+
+```text
+RSA identity key pair
+        │
+        │ pitkäikäinen
+        ▼
+User identity
+
+
+AES key
+        │
+        │ uusi jokaiselle viestille
+        ▼
+Individual message
+```
+
+Täsmällinen termi mallille on:
+
+**Staattiseen käyttäjäkohtaiseen avainpariin perustuva hybridimuotoinen E2E-salaus.**
+
+Englanniksi:
+
+**Static-Key Hybrid E2E Encryption**
+
+---
+
+# 35. Yhteenveto
+
+IRIS E2E Chat on yksinkertainen 1-to-1 End-to-End Encrypted -chat, jonka alkuperäinen toteutus perustuu hybridiseen kryptografiseen malliin.
+
+Sen rakenne on:
+
+```text
+User RSA Key Pair
+        │
+        ▼
+   AES Key per Message
+        │
+        ├──────────────┐
+        ▼              ▼
+ Friend Public Key   Own Public Key
+        │              │
+        ▼              ▼
+Encrypted AES Key   Encrypted AES Key
+        │              │
+        └──────┬───────┘
+               ▼
+         AES-GCM CipherText
+               │
+               ▼
+             Server
+               │
+               ▼
+             Client
+               │
+               ▼
+        Private Key
+               │
+               ▼
+            AES Key
+               │
+               ▼
+          Plaintext
+```
+
+Projektin alkuperäinen E2E-malli voidaan tiivistää näin:
+
+> **Pitkäikäinen käyttäjäkohtainen RSA-avainpari toimii identiteetti- ja avainten suojauskerroksena, kun taas jokainen viesti salataan uudella AES-GCM-avaimella. Viestin AES-avain salataan erikseen sekä vastaanottajan että lähettäjän RSA-public keyllä.**
+
+Tämä muodostaa toimivan hybridisen E2E-rakenteen, mutta ei ole sama asia kuin moderni ratcheting-pohjainen E2E-protokolla.
+
+Projektin modernisoinnin kannalta luonnollinen seuraava askel olisi erottaa toisistaan:
+
+```text
+Identity
+   │
+   ▼
+Session
+   │
+   ▼
+Key Agreement
+   │
+   ▼
+Ratchet
+   │
+   ▼
+Message Keys
+```
+
+Tällöin alkuperäisen projektin hybridisalaus toimii hyvänä lähtökohtana modernimman E2E-arkkitehtuurin ymmärtämiselle ja suunnittelulle.
