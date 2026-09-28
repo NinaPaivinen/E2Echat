@@ -475,7 +475,7 @@ Tärkeimmät käsitteet:
 
 ---
 
-# Summary
+# Summary vertailu nykyaikaisiin E2E chätteihin
 
 Alkuperäinen E2E-chat perustui seuraavaan ideaan:
 
@@ -514,8 +514,131 @@ Jokaisella käyttäjällä oli oma pysyvämpi avainpari. Private key oli käytt�
 
 Koska avainpari oli staattinen eikä järjestelmä käyttänyt viestikohtaista ratchetingia, avainparin vaihtaminen vaikutti myös vanhojen omien viestien avaamiseen. Keskustelukumppanin pääsy omiin vanhoihin viesteihinsä säilyi kuitenkin hänen oman avainparinsa ansiosta.
 
-**Projektin alkuperäinen kryptografinen malli:**
 
-> **Static-Key Hybrid E2E Encryption**
->
-> AES for message encryption + public-key cryptography for protecting the AES key + persistent user key pairs.
+### Vanha projektisi vs. moderni E2E
+
+| Ominaisuus                                              | Vanha E2E-chat                         | Moderni ratcheting E2E         |
+| ------------------------------------------------------- | -------------------------------------- | ------------------------------ |
+| Käyttäjällä oma key pair                                | ✅                                      | ✅                              |
+| Public key palvelimella                                 | ✅                                      | ✅                              |
+| Private key käyttäjän hallussa                          | ✅                                      | ✅                              |
+| Viesti salataan symmetrisellä avaimella                 | ✅                                      | ✅                              |
+| Public key suojaa viestin avainta                       | ✅                                      | 🔸 yleensä eri tavalla         |
+| Sama käyttäjän avainpari pitkään                        | **✅**                                  | 🔸 vain osittain               |
+| Uusia avaimia viestiketjun aikana                       | ❌                                      | **✅**                          |
+| Ratchet                                                 | ❌                                      | **✅**                          |
+| Viestit kryptografisesti toisistaan eriytettyjä         | ❌ / rajallisesti                       | **✅**                          |
+| Forward secrecy                                         | Ei tämän mallin varsinainen ominaisuus | **✅ tyypillisesti**            |
+| Key compromise recovery                                 | Rajallinen                             | **✅ ratcheting-protokollissa** |
+| Salasanan vaihto voi vaihtaa käyttäjän E2E-identiteetin | **Kyllä, vanhassa mallissa**           | Ei välttämättä samalla tavalla |
+
+### Vanhassa mallissa
+
+Ajatus oli käytännössä:
+
+```text
+                    USER A
+                       │
+                ┌──────┴──────┐
+                │             │
+           Public Key     Private Key
+                │             │
+                │             └── User A controls
+                │
+                ▼
+             Database
+
+
+MESSAGE
+   │
+   ▼
+ AES encryption
+   │
+   ├── AES key → encrypted with User B public key
+   │
+   └── AES key → encrypted with User A public key
+```
+
+Eli **käyttäjän kryptografinen identiteetti oli hyvin konkreettisesti tämän key pairin ympärillä**.
+
+Jos A vaihtoi key pairin:
+
+```text
+User A OLD key pair
+       │
+       ├── old encryptedAesKeyOwn
+       │
+       └── old messages
+                ↓
+          old private key
+                ↓
+              🔓
+
+
+User A NEW key pair
+       │
+       └── cannot replace old private key
+                  ↓
+             old messages 🔒
+```
+
+Mutta B:llä oli edelleen oma private keynsä ja B:lle salattu AES-avain:
+
+```text
+User B private key
+       │
+       ▼
+encryptedAesKeyFriend
+       │
+       ▼
+    AES key
+       │
+       ▼
+old message 🔓
+```
+
+### Modernissa mallissa ajatus muuttuu
+
+Esimerkiksi Signal-tyyppisessä arkkitehtuurissa käyttäjän pysyvä avainpari toimii enemmän **identiteetin ankkurina**, eikä sitä käytetä samalla tavalla jokaisen viestin salausavaimen suorana suojana.
+
+Viestiketjuun muodostetaan jatkuvasti uutta avainmateriaalia:
+
+```text
+User Identity Keys
+       │
+       ▼
+   Session Setup
+       │
+       ▼
+   Ratchet State
+       │
+       ├── Message Key 1
+       ├── Message Key 2
+       ├── Message Key 3
+       ├── Message Key 4
+       └── ...
+```
+
+Eli:
+
+**Vanha projektisi:**
+
+> "Tämä viesti kuuluu käyttäjälle B → käytetään B:n public keytä AES-avaimen suojaamiseen."
+
+**Moderni ratcheting-malli:**
+
+> "A:n ja B:n välisellä sessionilla on tämänhetkinen kryptografinen tila → siitä johdetaan tämän viestin avain → seuraava viesti käyttää jo uutta avainta."
+
+Tämä on ehkä paras tapa hahmottaa ero.
+
+### Ja tässä on yksi tärkeä tarkennus
+
+**"Käyttäjään sidottu" ei ole itsessään huono tai vanhentunut ratkaisu.**
+
+Modernikin E2E tarvitsee jonkin tavan vastata kysymykseen:
+
+> *"Kuka tämä käyttäjä on kryptografisesti?"*
+
+Siihen käytetään edelleen pitkäkestoisia identity key -avaimia.
+
+Modernissa järjestelmässä identity key toimii enemmän luottamuksen perustana, jonka päälle muodostetaan lyhytkestoista session/message-key-materiaalia.
