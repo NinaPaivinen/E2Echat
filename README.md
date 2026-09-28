@@ -7,7 +7,7 @@
 
 E2E Chat on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus.
 
-ärjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
+Järjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
 
 **Node.js**-serveri (backend) toimii vain sokeana välittäjänä, eikä sillä ole koskaan pääsyä viestien selväkieliseen sisältöön.
 
@@ -18,6 +18,9 @@ API on **GraphQL** (pääasiallinen datasiirto), **REST** (rest-rajapinnat) ja r
 Tietokantana toimii **PostgreSQL** (järjestelmä migroitiin alkuperäisestä **MySQL**-toteutuksesta).
 Tietokantakyselyistä ja datamallinnuksesta vastaa **Prisma ORM**, johon siirryttiin projektin kehityksen aikana alkuperäisestä **Sequelizen** toteutuksesta.
 
+Käyttäjän yksityinen salausavain johdetaan salasanalauseesta **(Passphrase)**, jota ei koskaan lähetetä palvelimelle. Käyttäjän on muistettava tämä lause itse, sillä sitä tarvitaan avainten käyttöönottoon ja viestien purkamiseen.
+
+**IndexedDB** toimi valinnaisena **pitkäaikaistallennuksena** selaimessa. Tämä tarkoittaa, että jos käyttäjä ei valinnut pitkäaikaistallennusta, avaimet pysyivät vain selaimen välimuistissa (RAM) ja katoavat heti, kun välilehti suljetaan. IndexedDB:n ansiosta istunnon pystyi halutessaan säilyttämään turvallisesti.
 
 ## 1. Projektin tavoite
 
