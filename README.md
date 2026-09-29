@@ -1,11 +1,10 @@
 
-# 🛡️ E2E Chat
 
 <p align="center">
   <img src="./images/logo.png" width="300">
 </p>
 
-E2E Chat on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus.
+# E2E Chat on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus.
 
 Järjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
 
@@ -31,42 +30,52 @@ Käyttäjän yksityinen salausavain johdetaan salasanalauseesta **(Passphrase)**
   <img src="./images/chat1.png" width="300">
 </p>
 
+Hybridisen kryptografisen mallin rakenne on:
+
+```text
+User RSA Key Pair
+        │
+        ▼
+   AES Key per Message
+        │
+        ├──────────────┐
+        ▼              ▼
+ Friend Public Key   Own Public Key
+        │              │
+        ▼              ▼
+Encrypted AES Key   Encrypted AES Key
+        │              │
+        └──────┬───────┘
+               ▼
+         AES-GCM CipherText
+               │
+               ▼
+             Server
+               │
+               ▼
+             Client
+               │
+               ▼
+        Private Key
+               │
+               ▼
+            AES Key
+               │
+               ▼
+          Plaintext
+```
+
+Projektin alkuperäinen E2E-malli voidaan tiivistää näin:
+
+> Pitkäikäinen käyttäjäkohtainen RSA-avainpari toimii identiteetti- ja avainten suojauskerroksena, kun taas jokainen viesti salataan uudella AES-GCM-avaimella.
+Viestin AES-avain salataan erikseen sekä vastaanottajan että lähettäjän RSA-public keyllä.
+
+Tämä muodostaa toimivan hybridisen E2E-rakenteen, mutta ei ole sama asia kuin moderni ratcheting-pohjainen E2E-protokolla.
+
+
 ## 1. Projektin tavoite
 
 Projektin tavoitteena oli toteuttaa yksinkertainen kahden käyttäjän välinen E2E-salattu chat.
-
-Keskeinen periaate:
-
-```text
-User A
-  │
-  │ plaintext
-  ▼
-Client
-  │
-  │ AES-GCM
-  ▼
-Encrypted message
-  │
-  │ RSA-OAEP
-  ▼
-Encrypted AES key
-  │
-  ▼
-Server
-  │
-  │ encrypted data
-  ▼
-User B
-  │
-  │ RSA-OAEP
-  ▼
-AES key
-  │
-  │ AES-GCM
-  ▼
-Plaintext
-```
 
 Palvelimen tehtävänä on välittää ja tallentaa salattua dataa.
 
@@ -142,13 +151,13 @@ Public key voidaan tallentaa palvelimelle.
 
 Private key puolestaan on salainen avain, jota tarvitaan viestien avaamiseen.
 
-Palvelimelle tallennettu `encryptedKey` ei tarkoita plaintext-muodossa tallennettua private keytä. Se on suojattua avainmateriaalia, jota voidaan käyttää private keyn säilyttämiseen tai palauttamiseen käyttäjän salasanan yhteydessä.
+Palvelimelle tallennettu `encryptedKey` ei tarkoita plaintext-muodossa tallennettua private keytä. Se on suojattua avainmateriaalia, jota voidaan käyttää private keyn säilyttämiseen tai palauttamiseen käyttäjän salasanan (passPhrase) avulla.
 
 ---
 
-# 4. UserKey
+# 4. UserKey tietokanta taulu
 
-Projektissa käyttäjän avaintiedot tallennetaan erilliseen `UserKey`-malliin.
+Projektissa käyttäjän avaintiedot tallennetaan erilliseen `UserKey`-tauluun.
 
 Keskeiset kentät:
 
@@ -875,10 +884,6 @@ AES key encrypted for both users
 
 Koodissa on tämän seurauksena vanhempia/duplikaatteja kryptografisia funktioita.
 
-Esimerkiksi RSA-only-toteutus näyttää olevan vanhempi kokeilu verrattuna nykyiseen hybridimalliin.
-
-Tämä on hyvä huomioida, kun projektia myöhemmin refaktoroidaan.
-
 ---
 
 # 26. Nykyisen toteutuksen keskeiset funktiot
@@ -1126,7 +1131,7 @@ Decrypt only at endpoint
 
 # 32. Tulevaisuuden kehitys
 
-Jos projektista rakennetaan uusi moderni versio, mahdollisia kehityssuuntia ovat:
+Jos projektista rakennetaan joskus uusi modernimpi versio, mahdollisia kehityssuuntia ovat:
 
 * selkeämpi key management
 * moderni session establishment
@@ -1204,49 +1209,6 @@ Englanniksi:
 
 # 35. Yhteenveto
 
-IRIS E2E Chat on yksinkertainen 1-to-1 End-to-End Encrypted -chat, jonka alkuperäinen toteutus perustuu hybridiseen kryptografiseen malliin.
-
-Sen rakenne on:
-
-```text
-User RSA Key Pair
-        │
-        ▼
-   AES Key per Message
-        │
-        ├──────────────┐
-        ▼              ▼
- Friend Public Key   Own Public Key
-        │              │
-        ▼              ▼
-Encrypted AES Key   Encrypted AES Key
-        │              │
-        └──────┬───────┘
-               ▼
-         AES-GCM CipherText
-               │
-               ▼
-             Server
-               │
-               ▼
-             Client
-               │
-               ▼
-        Private Key
-               │
-               ▼
-            AES Key
-               │
-               ▼
-          Plaintext
-```
-
-Projektin alkuperäinen E2E-malli voidaan tiivistää näin:
-
-> **Pitkäikäinen käyttäjäkohtainen RSA-avainpari toimii identiteetti- ja avainten suojauskerroksena, kun taas jokainen viesti salataan uudella AES-GCM-avaimella. Viestin AES-avain salataan erikseen sekä vastaanottajan että lähettäjän RSA-public keyllä.**
-
-Tämä muodostaa toimivan hybridisen E2E-rakenteen, mutta ei ole sama asia kuin moderni ratcheting-pohjainen E2E-protokolla.
-
 Projektin modernisoinnin kannalta luonnollinen seuraava askel olisi erottaa toisistaan:
 
 ```text
@@ -1266,3 +1228,17 @@ Message Keys
 ```
 
 Tällöin alkuperäisen projektin hybridisalaus toimii hyvänä lähtökohtana modernimman E2E-arkkitehtuurin ymmärtämiselle ja suunnittelulle.
+
+
+********************************
+Itselle muistii, eroteltu alkuperäisestä "client"
+ja "backend"  reposta. Git clonattu uusi chat-backend-client, tehty siihen copy-paste. 
+Ilman commit historiaa.
+
+commit hard-reset
+
+Client
+2edd12e78c62b7de429e219efde8bf5cc4e92e3b
+
+Backend
+git reset --hard 454610518340f00736b68b5ff1522dbc45a3c476
