@@ -4,7 +4,9 @@
   <img src="./images/logo.png" width="300">
 </p>
 
-# Elisa E2E Chat on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus.
+# Elisa E2E Chat
+
+Elisa on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus vuodelta 2025.
 
 Järjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
 
@@ -24,7 +26,7 @@ Käyttäjän yksityinen salausavain johdetaan salasanalauseesta **(Passphrase)**
 
 <p align="center">
   <img src="./images/passphraseUnohtu.jpg" width="300">
-  <img src="./images/passphrase2.jpg" width="300">
+  <img src="./images/passPhrase.png" width="300">
 </p>
 <p align="center">
   <img src="./images/chat1.png" width="300">
