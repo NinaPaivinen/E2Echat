@@ -6,7 +6,7 @@
 
 # Elisa E2E Chat
 
-Elisa on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus vuodelta 2025.
+Elisa on kahden käyttäjän välinen **päästä-päähän (End-to-End)** salattu reaaliaikainen viestintäsovellus alunperin vuodelta 2025.
 
 Järjestelmän tietoturva nojaa vahvaan **hybridisalaukseen**: viestit kryptataan asiakasohjelmassa **AES-GCM-avaimella**, joka suojataan vastaanottajan julkisella **RSA-OAEP-avaimella**.
 
