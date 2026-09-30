@@ -1,4 +1,8 @@
+<p align="center">
 
+ [ALGHORITHM](ALGORITHM) ||   [LICENCE](LICENCE)
+
+</p>
 
 <p align="center">
   <img src="./images/logo.png" width="300">
@@ -1244,3 +1248,10 @@ Client
 
 Backend
 git reset --hard 454610518340f00736b68b5ff1522dbc45a3c476
+
+
+
+## 📄 License
+
+This project is [Apache License 2.0](LICENSE).
+
