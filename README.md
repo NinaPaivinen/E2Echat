@@ -1,6 +1,6 @@
 <p align="center">
 
- [ALGHORITHM](ALGORITHM) ||   [LICENCE](LICENCE)
+ [ALGHORITHM](ALGORITHM.md) ||   [LICENCE](LICENCE)
 
 </p>
 
